@@ -210,6 +210,22 @@
       background: var(--rose);
     }
 
+    .agent-panel {
+      grid-column: 1 / -1;
+    }
+
+    .agent-layout {
+      display: grid;
+      gap: 18px;
+      grid-template-columns: minmax(260px, 0.72fr) minmax(0, 1.28fr);
+    }
+
+    .agent-controls {
+      display: grid;
+      gap: 16px;
+      min-width: 0;
+    }
+
     .body {
       display: grid;
       gap: 16px;
@@ -258,6 +274,46 @@
       word-break: break-word;
     }
 
+    .conversation {
+      background: #f3f6f8;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      display: grid;
+      gap: 12px;
+      max-height: 460px;
+      min-height: 300px;
+      overflow: auto;
+      padding: 14px;
+    }
+
+    .turn {
+      background: #ffffff;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 12px;
+    }
+
+    .turn strong {
+      display: block;
+      font-size: 0.84rem;
+      margin-bottom: 6px;
+    }
+
+    .turn.user strong {
+      color: var(--rose);
+    }
+
+    .turn.assistant strong {
+      color: var(--teal);
+    }
+
+    .turn p {
+      line-height: 1.45;
+      margin: 0;
+      overflow-wrap: anywhere;
+      white-space: pre-wrap;
+    }
+
     .message {
       color: var(--muted);
       font-size: 0.94rem;
@@ -297,6 +353,10 @@
       .workspace {
         grid-template-columns: 1fr;
       }
+
+      .agent-layout {
+        grid-template-columns: 1fr;
+      }
     }
 
     @media (max-width: 620px) {
@@ -333,6 +393,79 @@
     </header>
 
     <main class="workspace">
+      <section class="panel agent-panel" aria-labelledby="agentTitle">
+        <div class="panel-head">
+          <div>
+            <h2 id="agentTitle">Voice Agent</h2>
+            <p>Start a spoken conversation, send each turn, and hear the reply.</p>
+          </div>
+          <span class="tag tts">AGENT</span>
+        </div>
+        <div class="body agent-layout">
+          <div class="agent-controls">
+            <div class="grid">
+              <div>
+                <label for="agentLanguage">Language</label>
+                <select id="agentLanguage">
+                  <option value="hi-IN">Hindi</option>
+                  <option value="en-IN">English India</option>
+                  <option value="gu-IN">Gujarati</option>
+                  <option value="bn-IN">Bengali</option>
+                  <option value="kn-IN">Kannada</option>
+                  <option value="ml-IN">Malayalam</option>
+                  <option value="mr-IN">Marathi</option>
+                  <option value="od-IN">Odia</option>
+                  <option value="pa-IN">Punjabi</option>
+                  <option value="ta-IN">Tamil</option>
+                  <option value="te-IN">Telugu</option>
+                </select>
+              </div>
+              <div>
+                <label for="agentSpeaker">Speaker</label>
+                <select id="agentSpeaker">
+                  <option value="shubh">shubh</option>
+                  <option value="anushka">anushka</option>
+                  <option value="abhilash">abhilash</option>
+                  <option value="manisha">manisha</option>
+                  <option value="vidya">vidya</option>
+                  <option value="arya">arya</option>
+                  <option value="karun">karun</option>
+                  <option value="hitesh">hitesh</option>
+                  <option value="aditya">aditya</option>
+                  <option value="ritu">ritu</option>
+                </select>
+              </div>
+              <div>
+                <label for="agentTurnSeconds">Turn Length</label>
+                <input id="agentTurnSeconds" type="number" min="2" max="20" step="1" value="6">
+              </div>
+              <div>
+                <label for="agentModel">Chat Model</label>
+                <select id="agentModel">
+                  <option value="gpt-4o-mini">gpt-4o-mini</option>
+                  <option value="gpt-4o">gpt-4o</option>
+                  <option value="gpt-4.1-mini">gpt-4.1-mini</option>
+                  <option value="gpt-4.1">gpt-4.1</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="actions">
+              <button class="primary" id="startAgent">Start Voice Agent</button>
+              <button class="secondary" id="sendAgentTurn" disabled>Send Turn Now</button>
+              <button class="danger" id="stopAgent" disabled>Stop Agent</button>
+              <button class="secondary" id="resetAgent">Reset Chat</button>
+            </div>
+
+            <div class="meter" aria-hidden="true"><span id="agentMeter"></span></div>
+            <audio id="agentAudio" controls></audio>
+            <div class="message" id="agentStatus">Idle</div>
+          </div>
+
+          <div class="conversation" id="agentConversation">Your voice conversation will appear here.</div>
+        </div>
+      </section>
+
       <section class="panel" aria-labelledby="ttsTitle">
         <div class="panel-head">
           <div>
@@ -473,7 +606,19 @@
       meterTimer: null,
       lastAudioUrl: null,
       lastAudioBlob: null,
-      lastAudioFormat: "wav"
+      lastAudioFormat: "wav",
+      agent: {
+        active: false,
+        recorder: null,
+        stream: null,
+        chunks: [],
+        meterTimer: null,
+        autoStopTimer: null,
+        audioUrl: null,
+        conversation: [],
+        turn: 0,
+        busy: false
+      }
     };
 
     const $ = (id) => document.getElementById(id);
@@ -522,6 +667,327 @@
       }
 
       return "";
+    }
+
+    function setAgentState(text, kind = "") {
+      setMessage("agentStatus", text, kind);
+    }
+
+    function updateAgentButtons() {
+      const isRecording = state.agent.recorder && state.agent.recorder.state === "recording";
+      $("startAgent").disabled = state.agent.active;
+      $("sendAgentTurn").disabled = !state.agent.active || !isRecording || state.agent.busy;
+      $("stopAgent").disabled = !state.agent.active;
+      $("resetAgent").disabled = state.agent.active || state.agent.conversation.length === 0;
+    }
+
+    function renderAgentConversation() {
+      const root = $("agentConversation");
+      root.textContent = "";
+
+      if (!state.agent.conversation.length) {
+        root.textContent = "Your voice conversation will appear here.";
+        updateAgentButtons();
+        return;
+      }
+
+      state.agent.conversation.forEach((message, index) => {
+        const turn = document.createElement("div");
+        turn.className = `turn ${message.role}`;
+
+        const label = document.createElement("strong");
+        label.textContent = `${message.role === "user" ? "You" : "Assistant"} · ${index + 1}`;
+
+        const body = document.createElement("p");
+        body.textContent = message.content;
+
+        turn.append(label, body);
+        root.appendChild(turn);
+      });
+      root.scrollTop = root.scrollHeight;
+      updateAgentButtons();
+    }
+
+    function clearAgentTimers() {
+      clearInterval(state.agent.meterTimer);
+      clearTimeout(state.agent.autoStopTimer);
+      state.agent.meterTimer = null;
+      state.agent.autoStopTimer = null;
+      $("agentMeter").style.width = "0%";
+    }
+
+    function stopAgentStream() {
+      if (state.agent.stream) {
+        state.agent.stream.getTracks().forEach((track) => track.stop());
+        state.agent.stream = null;
+      }
+    }
+
+    function buildAgentSttForm(file) {
+      const form = new FormData();
+      form.append("file", file, file.name || "agent-turn.webm");
+      form.append("language_code", $("agentLanguage").value);
+      form.append("model", "saaras:v3");
+      form.append("mode", "transcribe");
+      return form;
+    }
+
+    function agentMessages() {
+      const languageCode = $("agentLanguage").value;
+      let languageInstruction = "Reply in the user's language when possible.";
+      
+      // Map language codes to specific instructions
+      const languageMap = {
+        "en-IN": "Always respond in English. Be conversational and natural. Respond directly without internal reasoning.",
+        "hi-IN": "Always respond in Hindi using Devanagari script. Be conversational and natural. Respond directly without internal reasoning.",
+        "mr-IN": "Always respond in Marathi using Devanagari script. Be conversational and natural. Respond directly without internal reasoning.",
+        "ta-IN": "Always respond in Tamil. Be conversational and natural. Respond directly without internal reasoning.",
+        "te-IN": "Always respond in Telugu. Be conversational and natural. Respond directly without internal reasoning.",
+        "kn-IN": "Always respond in Kannada. Be conversational and natural. Respond directly without internal reasoning.",
+        "ml-IN": "Always respond in Malayalam. Be conversational and natural. Respond directly without internal reasoning.",
+        "gu-IN": "Always respond in Gujarati. Be conversational and natural. Respond directly without internal reasoning.",
+        "pa-IN": "Always respond in Punjabi. Be conversational and natural. Respond directly without internal reasoning.",
+        "bn-IN": "Always respond in Bengali using Bengali script. Be conversational and natural. Respond directly without internal reasoning.",
+        "od-IN": "Always respond in Odia using Odia script. Be conversational and natural. Respond directly without internal reasoning.",
+      };
+      
+      if (languageMap[languageCode]) {
+        languageInstruction = languageMap[languageCode];
+      }
+      
+      return [
+        {
+          role: "system",
+          content: `You are a helpful voice assistant. Keep replies concise, natural, and suitable for speech. ${languageInstruction}`
+        },
+        ...state.agent.conversation
+      ];
+    }
+
+    function base64ToAudioBlob(audioBase64, format) {
+      const binary = atob(audioBase64);
+      const chunks = [];
+      for (let offset = 0; offset < binary.length; offset += 1024) {
+        const slice = binary.slice(offset, offset + 1024);
+        const bytes = new Uint8Array(slice.length);
+        for (let i = 0; i < slice.length; i += 1) {
+          bytes[i] = slice.charCodeAt(i);
+        }
+        chunks.push(bytes);
+      }
+
+      const mime = format === "wav" ? "audio/wav" : `audio/${format}`;
+      return new Blob(chunks, { type: mime });
+    }
+
+    async function startAgent() {
+      const supportMessage = microphoneSupportMessage();
+      if (supportMessage) {
+        setAgentState(supportMessage, "error");
+        return;
+      }
+
+      if (state.recorder && state.recorder.state === "recording") {
+        setAgentState("Stop the Speech To Text recorder before starting the agent.", "error");
+        return;
+      }
+
+      state.agent.active = true;
+      state.agent.busy = false;
+      state.agent.turn += 1;
+      setAgentState("Listening...");
+      updateAgentButtons();
+      await beginAgentListening();
+    }
+
+    async function beginAgentListening() {
+      if (!state.agent.active || state.agent.busy) return;
+
+      try {
+        state.agent.stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        state.agent.chunks = [];
+        const recorderOptions = MediaRecorder.isTypeSupported("audio/webm")
+          ? { mimeType: "audio/webm" }
+          : undefined;
+        state.agent.recorder = new MediaRecorder(state.agent.stream, recorderOptions);
+        state.agent.recorder.ondataavailable = (event) => {
+          if (event.data.size > 0) state.agent.chunks.push(event.data);
+        };
+        state.agent.recorder.onstop = async () => {
+          clearAgentTimers();
+          stopAgentStream();
+          const mimeType = cleanMimeType(state.agent.recorder.mimeType);
+          const blob = new Blob(state.agent.chunks, { type: mimeType });
+          state.agent.recorder = null;
+          updateAgentButtons();
+          await processAgentTurn(blob);
+        };
+
+        state.agent.recorder.start(250);
+        setAgentState("Listening...");
+        updateAgentButtons();
+
+        let width = 12;
+        state.agent.meterTimer = setInterval(() => {
+          width = width >= 94 ? 12 : width + 8;
+          $("agentMeter").style.width = `${width}%`;
+        }, 180);
+
+        const turnMs = Math.max(2, Math.min(20, Number($("agentTurnSeconds").value || 6))) * 1000;
+        state.agent.autoStopTimer = setTimeout(() => {
+          stopCurrentAgentRecording();
+        }, turnMs);
+      } catch (error) {
+        state.agent.active = false;
+        clearAgentTimers();
+        stopAgentStream();
+        setAgentState(error.message, "error");
+        updateAgentButtons();
+      }
+    }
+
+    function stopCurrentAgentRecording() {
+      if (!state.agent.recorder || state.agent.recorder.state !== "recording") return;
+      clearAgentTimers();
+      state.agent.busy = true;
+      setAgentState("Transcribing...");
+      updateAgentButtons();
+      state.agent.recorder.stop();
+    }
+
+    async function processAgentTurn(blob) {
+      if (!state.agent.active) return;
+
+      if (blob.size < 1024) {
+        state.agent.busy = false;
+        setAgentState("No speech detected. Listening again...");
+        updateAgentButtons();
+        setTimeout(beginAgentListening, 500);
+        return;
+      }
+
+      try {
+        setAgentState("Transcribing...");
+        const file = new File([blob], "agent-turn.webm", { type: blob.type });
+        const sttResponse = await fetch("/stt/transcribe", {
+          method: "POST",
+          body: buildAgentSttForm(file)
+        });
+
+        if (!sttResponse.ok) {
+          throw new Error(await readError(sttResponse));
+        }
+
+        if (!state.agent.active) return;
+        const sttData = await sttResponse.json();
+        const transcript = (sttData.transcript || "").trim();
+        if (!transcript) {
+          state.agent.busy = false;
+          setAgentState("No transcript found. Listening again...");
+          updateAgentButtons();
+          setTimeout(beginAgentListening, 500);
+          return;
+        }
+
+        state.agent.conversation.push({ role: "user", content: transcript });
+        renderAgentConversation();
+
+        setAgentState("Thinking...");
+        const agentResponse = await fetch("/agent/respond", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            messages: agentMessages(),
+            model: $("agentModel").value,
+            temperature: 0.4,
+            max_tokens: 1024,
+            target_language_code: $("agentLanguage").value,
+            speaker: $("agentSpeaker").value,
+            output_format: "wav"
+          })
+        });
+
+        if (!agentResponse.ok) {
+          throw new Error(await readError(agentResponse));
+        }
+
+        if (!state.agent.active) return;
+        const agentData = await agentResponse.json();
+        const assistantText = (agentData.assistant_text || "").trim();
+        if (!assistantText) {
+          throw new Error("The assistant response was empty.");
+        }
+
+        state.agent.conversation.push({ role: "assistant", content: assistantText });
+        renderAgentConversation();
+        await playAgentAudio(agentData.audio_base64, agentData.audio_format || "wav");
+      } catch (error) {
+        state.agent.active = false;
+        state.agent.busy = false;
+        clearAgentTimers();
+        stopAgentStream();
+        setAgentState(error.message, "error");
+        updateAgentButtons();
+      }
+    }
+
+    async function playAgentAudio(audioBase64, format) {
+      const audio = $("agentAudio");
+      const blob = base64ToAudioBlob(audioBase64, format);
+      if (state.agent.audioUrl) URL.revokeObjectURL(state.agent.audioUrl);
+      state.agent.audioUrl = URL.createObjectURL(blob);
+      audio.src = state.agent.audioUrl;
+      state.agent.busy = true;
+      setAgentState("Speaking...");
+      updateAgentButtons();
+
+      audio.onended = () => {
+        state.agent.busy = false;
+        updateAgentButtons();
+        if (state.agent.active) {
+          setAgentState("Listening again...");
+          setTimeout(beginAgentListening, 450);
+        } else {
+          setAgentState("Idle");
+        }
+      };
+
+      await audio.play();
+    }
+
+    function stopAgent() {
+      state.agent.active = false;
+      state.agent.busy = false;
+      clearAgentTimers();
+
+      if (state.agent.recorder && state.agent.recorder.state === "recording") {
+        state.agent.recorder.onstop = () => {
+          clearAgentTimers();
+          stopAgentStream();
+          state.agent.recorder = null;
+          updateAgentButtons();
+        };
+        state.agent.recorder.stop();
+      } else {
+        stopAgentStream();
+      }
+
+      const audio = $("agentAudio");
+      audio.pause();
+      audio.currentTime = 0;
+      setAgentState("Idle");
+      updateAgentButtons();
+    }
+
+    function resetAgent() {
+      if (state.agent.active) return;
+      state.agent.conversation = [];
+      state.agent.turn = 0;
+      if (state.agent.audioUrl) URL.revokeObjectURL(state.agent.audioUrl);
+      state.agent.audioUrl = null;
+      $("agentAudio").removeAttribute("src");
+      setAgentState("Idle");
+      renderAgentConversation();
     }
 
     async function generateTts() {
@@ -641,6 +1107,11 @@
         return;
       }
 
+      if (state.agent.active) {
+        setMessage("sttStatus", "Stop the Voice Agent before using the standalone recorder.", "error");
+        return;
+      }
+
       try {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
         state.chunks = [];
@@ -683,6 +1154,10 @@
       state.recorder.stop();
     }
 
+    $("startAgent").addEventListener("click", startAgent);
+    $("sendAgentTurn").addEventListener("click", stopCurrentAgentRecording);
+    $("stopAgent").addEventListener("click", stopAgent);
+    $("resetAgent").addEventListener("click", resetAgent);
     $("generateTts").addEventListener("click", generateTts);
     $("downloadTts").addEventListener("click", downloadTts);
     $("transcribeFile").addEventListener("click", transcribeSelectedFile);
@@ -690,6 +1165,7 @@
     $("stopRecording").addEventListener("click", stopRecording);
 
     checkHealth();
+    renderAgentConversation();
     const supportMessage = microphoneSupportMessage();
     if (supportMessage) setMessage("sttStatus", supportMessage, "error");
   </script>

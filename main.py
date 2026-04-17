@@ -1,9 +1,11 @@
 """
-Sarvam AI TTS & STT FastAPI Backend
-====================================
+Sarvam AI TTS & STT + OpenAI Chat FastAPI Backend
+==================================================
 Endpoints:
   POST /stt/transcribe       - Upload audio file → get transcript
   POST /stt/stream           - WebSocket proxy for real-time STT
+    POST /chat/completions     - Text messages → OpenAI response
+    POST /agent/respond        - Text messages → OpenAI response + Sarvam TTS audio
   POST /tts/generate         - Text → audio file (WAV/MP3)
   WS   /tts/stream           - WebSocket streaming TTS
   GET  /health               - Health check
@@ -20,22 +22,26 @@ from pathlib import Path
 from fastapi import FastAPI, File, UploadFile, HTTPException, WebSocket, WebSocketDisconnect, Form
 from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Any, Optional
 from dotenv import load_dotenv
 from sarvamai import AsyncSarvamAI
 from sarvamai.core.api_error import ApiError
+from openai import AsyncOpenAI, OpenAIError
 
 load_dotenv()
 
 SARVAM_API_KEY = os.getenv("SARVAM_API_KEY")
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 APP_DIR = Path(__file__).resolve().parent
 _sarvam_client: Optional[AsyncSarvamAI] = None
 _sarvam_client_key: Optional[str] = None
+_openai_client: Optional[AsyncOpenAI] = None
+_openai_client_key: Optional[str] = None
 
 app = FastAPI(
-    title="Sarvam AI TTS & STT Agent",
-    description="FastAPI backend for Sarvam AI Speech-to-Text, Text-to-Speech, and Translate using the official SDK",
+    title="Sarvam AI TTS & STT + OpenAI Chat Agent",
+    description="FastAPI backend for Sarvam AI Speech-to-Text, Text-to-Speech, and OpenAI Chat",
     version="1.1.0",
 )
 
@@ -60,6 +66,40 @@ class TTSRequest(BaseModel):
     output_format: str = "wav"              # wav | mp3 | opus etc.
     speech_sample_rate: Optional[int] = None
     temperature: Optional[float] = None
+
+
+class ChatMessage(BaseModel):
+    role: str
+    content: str
+
+
+class ChatRequest(BaseModel):
+    messages: list[ChatMessage]
+    model: str = "gpt-4o-mini"
+    temperature: Optional[float] = None
+    top_p: Optional[float] = None
+    reasoning_effort: Optional[str] = None
+    max_tokens: Optional[int] = None
+    wiki_grounding: Optional[bool] = None
+
+
+class ChatResponse(BaseModel):
+    id: Optional[str] = None
+    object: Optional[str] = None
+    created: Optional[int] = None
+    model: Optional[str] = None
+    choices: list[dict[str, Any]] = Field(default_factory=list)
+    usage: Optional[dict[str, Any]] = None
+
+    model_config = {"extra": "allow"}
+
+
+class AgentRequest(ChatRequest):
+    target_language_code: str = "hi-IN"
+    speaker: str = "shubh"
+    tts_model: str = "bulbul:v3"
+    pace: float = 1.0
+    output_format: str = "wav"
 
 
 class TranslateRequest(BaseModel):
@@ -88,6 +128,13 @@ class TranslateResponse(BaseModel):
     source_language_code: Optional[str] = None
 
 
+class AgentResponse(BaseModel):
+    assistant_text: str
+    chat: dict[str, Any]
+    audio_format: str
+    audio_base64: str
+
+
 # ─── Helpers ────────────────────────────────────────────────────────────────
 
 def _get_sarvam_api_key() -> str:
@@ -105,6 +152,20 @@ def _sarvam() -> AsyncSarvamAI:
         _sarvam_client = AsyncSarvamAI(api_subscription_key=api_key)
         _sarvam_client_key = api_key
     return _sarvam_client
+
+
+def _openai() -> AsyncOpenAI:
+    global _openai_client, _openai_client_key
+
+    api_key = os.getenv("OPENAI_API_KEY") or OPENAI_API_KEY
+    if not api_key:
+        raise HTTPException(status_code=500, detail="OPENAI_API_KEY not configured")
+
+    if _openai_client is None or _openai_client_key != api_key:
+        _openai_client = AsyncOpenAI(api_key=api_key)
+        _openai_client_key = api_key
+
+    return _openai_client
 
 
 def _sdk_model_dump(value: Any) -> dict[str, Any]:
@@ -127,6 +188,109 @@ def _raise_sdk_error(exc: ApiError) -> None:
     raise HTTPException(status_code=status_code, detail=detail)
 
 
+def _chat_messages(messages: list[ChatMessage]) -> list[dict[str, str]]:
+    if not messages:
+        raise HTTPException(status_code=400, detail="messages cannot be empty")
+
+    allowed_roles = {"system", "user", "assistant", "tool"}
+    normalized = []
+    for index, message in enumerate(messages):
+        role = message.role.strip().lower()
+        content = message.content.strip()
+        if role not in allowed_roles:
+            raise HTTPException(status_code=400, detail=f"messages[{index}].role is invalid")
+        if not content:
+            raise HTTPException(status_code=400, detail=f"messages[{index}].content cannot be empty")
+        normalized.append({"role": role, "content": content})
+    return normalized
+
+
+def _chat_payload(req: ChatRequest) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "messages": _chat_messages(req.messages),
+        "model": req.model,
+    }
+    # Include these fields if they are not None
+    # NOTE: We NEVER include reasoning_effort to avoid thinking mode
+    #       which wastes tokens and returns reasoning_content instead of content
+    for field in ("temperature", "top_p", "max_tokens", "wiki_grounding"):
+        value = getattr(req, field)
+        if value is not None:
+            payload[field] = value
+    
+    # Explicitly ensure reasoning_effort is not set
+    if "reasoning_effort" in payload:
+        del payload["reasoning_effort"]
+    
+    return payload
+
+
+def _extract_assistant_text(chat: dict[str, Any]) -> str:
+    # Try the standard OpenAI format
+    choices = chat.get("choices") or []
+    if choices:
+        first_choice = choices[0] or {}
+        # Try nested message structure
+        message = first_choice.get("message") or {}
+        content = message.get("content") or ""
+        if content:
+            return str(content).strip()
+        # Try direct content field
+        if first_choice.get("content"):
+            return str(first_choice.get("content")).strip()
+    
+    # Try alternative formats
+    if chat.get("output"):
+        return str(chat.get("output")).strip()
+    if chat.get("text"):
+        return str(chat.get("text")).strip()
+    if chat.get("message"):
+        msg = chat.get("message")
+        if isinstance(msg, dict) and msg.get("content"):
+            return str(msg.get("content")).strip()
+        return str(msg).strip()
+    
+    return ""
+async def _create_chat_completion(req: ChatRequest) -> dict[str, Any]:
+    """Create a chat completion using OpenAI."""
+    payload = _chat_payload(req)
+    try:
+        response = await _openai().chat.completions.create(**payload)
+    except OpenAIError as exc:
+        status_code = getattr(exc, "status_code", None) or 502
+        raise HTTPException(status_code=status_code, detail=f"OpenAI error: {str(exc)}")
+
+    data = _sdk_model_dump(response)
+    if not _extract_assistant_text(data):
+        raise HTTPException(status_code=502, detail="OpenAI chat completion returned an empty assistant response")
+    return data
+
+
+
+async def _generate_tts_audio(req: TTSRequest) -> bytes:
+    payload = {
+        "text": req.text,
+        "target_language_code": req.target_language_code,
+        "speaker": req.speaker,
+        "model": req.model,
+        "pace": req.pace,
+        "output_audio_codec": req.output_format,
+    }
+    if req.speech_sample_rate is not None:
+        payload["speech_sample_rate"] = req.speech_sample_rate
+    if req.temperature is not None:
+        payload["temperature"] = req.temperature
+
+    try:
+        response = await _sarvam().text_to_speech.convert(**payload)
+    except ApiError as exc:
+        _raise_sdk_error(exc)
+
+    if not response.audios:
+        raise HTTPException(status_code=502, detail="Sarvam TTS returned no audio")
+    return base64.b64decode(response.audios[0])
+
+
 # ─── Health ─────────────────────────────────────────────────────────────────
 
 @app.get("/", response_class=HTMLResponse)
@@ -139,6 +303,7 @@ async def health():
     return {
         "status": "ok",
         "sarvam_key_set": bool(os.getenv("SARVAM_API_KEY") or SARVAM_API_KEY),
+        "openai_key_set": bool(os.getenv("OPENAI_API_KEY") or OPENAI_API_KEY),
         "sarvam_sdk": "sarvamai",
     }
 
@@ -288,6 +453,43 @@ async def stt_stream(websocket: WebSocket):
         await websocket.close()
 
 
+# ─── Chat Completion ────────────────────────────────────────────────────────
+
+@app.post("/chat/completions", response_model=ChatResponse)
+async def chat_completions(req: ChatRequest):
+    """
+    Send multi-turn text messages to Sarvam Chat Completion.
+    """
+    return await _create_chat_completion(req)
+
+
+# ─── Voice Agent Text Pipeline ──────────────────────────────────────────────
+
+@app.post("/agent/respond", response_model=AgentResponse)
+async def agent_respond(req: AgentRequest):
+    """
+    Run messages → chat completion → TTS audio.
+    Returns JSON with assistant text, raw chat response, and base64 audio.
+    """
+    chat = await _create_chat_completion(req)
+    assistant_text = _extract_assistant_text(chat)
+    audio_bytes = await _generate_tts_audio(TTSRequest(
+        text=assistant_text,
+        target_language_code=req.target_language_code,
+        speaker=req.speaker,
+        model=req.tts_model,
+        pace=req.pace,
+        output_format=req.output_format,
+    ))
+
+    return AgentResponse(
+        assistant_text=assistant_text,
+        chat=chat,
+        audio_format=req.output_format,
+        audio_base64=base64.b64encode(audio_bytes).decode("ascii"),
+    )
+
+
 # ─── TTS REST ───────────────────────────────────────────────────────────────
 
 @app.post("/tts/generate")
@@ -296,27 +498,7 @@ async def generate_speech(req: TTSRequest):
     Convert text to speech. Returns audio as a streaming file response.
     Max text length: 2500 characters per request.
     """
-    payload = {
-        "text": req.text,
-        "target_language_code": req.target_language_code,
-        "speaker": req.speaker,
-        "model": req.model,
-        "pace": req.pace,
-        "output_audio_codec": req.output_format,
-    }
-    if req.speech_sample_rate is not None:
-        payload["speech_sample_rate"] = req.speech_sample_rate
-    if req.temperature is not None:
-        payload["temperature"] = req.temperature
-
-    try:
-        response = await _sarvam().text_to_speech.convert(**payload)
-    except ApiError as exc:
-        _raise_sdk_error(exc)
-
-    audio_b64 = response.audios[0]
-    audio_bytes = base64.b64decode(audio_b64)
-
+    audio_bytes = await _generate_tts_audio(req)
     mime = "audio/wav" if req.output_format == "wav" else f"audio/{req.output_format}"
     return StreamingResponse(
         io.BytesIO(audio_bytes),

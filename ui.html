@@ -1,0 +1,697 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sarvam Voice Lab</title>
+  <style>
+    :root {
+      --page: #f7f9fb;
+      --ink: #171717;
+      --muted: #5f6368;
+      --line: #d7dde3;
+      --panel: #ffffff;
+      --teal: #0f766e;
+      --teal-dark: #115e59;
+      --rose: #be123c;
+      --green: #15803d;
+      --amber: #b45309;
+      --shadow: 0 16px 40px rgba(23, 23, 23, 0.08);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      background: var(--page);
+      color: var(--ink);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      letter-spacing: 0;
+    }
+
+    button,
+    input,
+    select,
+    textarea {
+      font: inherit;
+      letter-spacing: 0;
+    }
+
+    button {
+      border: 0;
+      border-radius: 8px;
+      cursor: pointer;
+      font-weight: 700;
+      min-height: 44px;
+      padding: 0 16px;
+      transition: transform 120ms ease, background 120ms ease, opacity 120ms ease;
+    }
+
+    button:hover {
+      transform: translateY(-1px);
+    }
+
+    button:disabled {
+      cursor: not-allowed;
+      opacity: 0.55;
+      transform: none;
+    }
+
+    label {
+      color: var(--muted);
+      display: block;
+      font-size: 0.92rem;
+      font-weight: 700;
+      margin-bottom: 8px;
+    }
+
+    input,
+    select,
+    textarea {
+      background: #ffffff;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      color: var(--ink);
+      outline: 0;
+      padding: 11px 12px;
+      width: 100%;
+    }
+
+    input:focus,
+    select:focus,
+    textarea:focus {
+      border-color: var(--teal);
+      box-shadow: 0 0 0 3px rgba(15, 118, 110, 0.14);
+    }
+
+    textarea {
+      min-height: 142px;
+      resize: vertical;
+    }
+
+    .shell {
+      min-height: 100vh;
+    }
+
+    .topbar {
+      align-items: center;
+      background: #ffffff;
+      border-bottom: 1px solid var(--line);
+      display: flex;
+      gap: 18px;
+      justify-content: space-between;
+      padding: 16px clamp(16px, 4vw, 44px);
+      position: sticky;
+      top: 0;
+      z-index: 5;
+    }
+
+    .brand {
+      align-items: center;
+      display: flex;
+      gap: 12px;
+      min-width: 0;
+    }
+
+    .brand img {
+      border-radius: 8px;
+      height: 44px;
+      object-fit: cover;
+      width: 64px;
+    }
+
+    .brand h1 {
+      font-size: 1.1rem;
+      line-height: 1.2;
+      margin: 0;
+      overflow-wrap: anywhere;
+    }
+
+    .status-pill {
+      align-items: center;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      color: var(--muted);
+      display: inline-flex;
+      font-size: 0.92rem;
+      font-weight: 700;
+      gap: 8px;
+      min-height: 36px;
+      padding: 0 12px;
+      white-space: nowrap;
+    }
+
+    .dot {
+      background: var(--amber);
+      border-radius: 50%;
+      display: inline-block;
+      height: 9px;
+      width: 9px;
+    }
+
+    .dot.ok {
+      background: var(--green);
+    }
+
+    .workspace {
+      display: grid;
+      gap: 20px;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      padding: 24px clamp(16px, 4vw, 44px) 44px;
+    }
+
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      box-shadow: var(--shadow);
+      min-width: 0;
+      overflow: hidden;
+    }
+
+    .panel-head {
+      align-items: start;
+      border-bottom: 1px solid var(--line);
+      display: flex;
+      gap: 14px;
+      justify-content: space-between;
+      padding: 18px;
+    }
+
+    .panel-head h2 {
+      font-size: 1.28rem;
+      line-height: 1.25;
+      margin: 0 0 6px;
+      overflow-wrap: anywhere;
+    }
+
+    .panel-head p {
+      color: var(--muted);
+      line-height: 1.45;
+      margin: 0;
+    }
+
+    .tag {
+      border-radius: 8px;
+      color: #ffffff;
+      flex: 0 0 auto;
+      font-size: 0.8rem;
+      font-weight: 800;
+      padding: 6px 9px;
+    }
+
+    .tag.tts {
+      background: var(--teal);
+    }
+
+    .tag.stt {
+      background: var(--rose);
+    }
+
+    .body {
+      display: grid;
+      gap: 16px;
+      padding: 18px;
+    }
+
+    .grid {
+      display: grid;
+      gap: 14px;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+
+    .primary {
+      background: var(--teal);
+      color: #ffffff;
+    }
+
+    .primary:hover {
+      background: var(--teal-dark);
+    }
+
+    .danger {
+      background: var(--rose);
+      color: #ffffff;
+    }
+
+    .secondary {
+      background: #e8eef2;
+      color: var(--ink);
+    }
+
+    .result {
+      background: #f3f6f8;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      min-height: 148px;
+      overflow: auto;
+      padding: 14px;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    .message {
+      color: var(--muted);
+      font-size: 0.94rem;
+      min-height: 22px;
+    }
+
+    .message.error {
+      color: var(--rose);
+      font-weight: 700;
+    }
+
+    .message.ok {
+      color: var(--green);
+      font-weight: 700;
+    }
+
+    audio {
+      width: 100%;
+    }
+
+    .meter {
+      background: #e8eef2;
+      border-radius: 8px;
+      height: 10px;
+      overflow: hidden;
+    }
+
+    .meter span {
+      background: var(--rose);
+      display: block;
+      height: 100%;
+      transition: width 160ms ease;
+      width: 0%;
+    }
+
+    @media (max-width: 920px) {
+      .workspace {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    @media (max-width: 620px) {
+      .topbar {
+        align-items: flex-start;
+        flex-direction: column;
+      }
+
+      .grid {
+        grid-template-columns: 1fr;
+      }
+
+      .panel-head {
+        flex-direction: column-reverse;
+      }
+
+      .actions button {
+        width: 100%;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <header class="topbar">
+      <div class="brand">
+        <img src="https://images.unsplash.com/photo-1516280440614-37939bbacd81?auto=format&fit=crop&w=320&q=80" alt="Studio microphone">
+        <div>
+          <h1>Sarvam Voice Lab</h1>
+          <div class="message" id="serverUrl"></div>
+        </div>
+      </div>
+      <div class="status-pill"><span class="dot" id="healthDot"></span><span id="healthText">Checking server</span></div>
+    </header>
+
+    <main class="workspace">
+      <section class="panel" aria-labelledby="ttsTitle">
+        <div class="panel-head">
+          <div>
+            <h2 id="ttsTitle">Text To Speech</h2>
+            <p>Write text, choose a voice, and play the generated audio.</p>
+          </div>
+          <span class="tag tts">TTS</span>
+        </div>
+        <div class="body">
+          <div>
+            <label for="ttsText">Text</label>
+            <textarea id="ttsText">Hello, how are you?</textarea>
+          </div>
+
+          <div class="grid">
+            <div>
+              <label for="ttsLanguage">Language</label>
+              <select id="ttsLanguage">
+                <option value="hi-IN">Hindi</option>
+                <option value="en-IN">English India</option>
+                <option value="gu-IN">Gujarati</option>
+                <option value="bn-IN">Bengali</option>
+                <option value="kn-IN">Kannada</option>
+                <option value="ml-IN">Malayalam</option>
+                <option value="mr-IN">Marathi</option>
+                <option value="od-IN">Odia</option>
+                <option value="pa-IN">Punjabi</option>
+                <option value="ta-IN">Tamil</option>
+                <option value="te-IN">Telugu</option>
+              </select>
+            </div>
+            <div>
+              <label for="ttsSpeaker">Speaker</label>
+              <select id="ttsSpeaker">
+                <option value="shubh">shubh</option>
+                <option value="anushka">anushka</option>
+                <option value="abhilash">abhilash</option>
+                <option value="manisha">manisha</option>
+                <option value="vidya">vidya</option>
+                <option value="arya">arya</option>
+                <option value="karun">karun</option>
+                <option value="hitesh">hitesh</option>
+                <option value="aditya">aditya</option>
+                <option value="ritu">ritu</option>
+                <option value="priya">priya</option>
+                <option value="neha">neha</option>
+                <option value="rahul">rahul</option>
+                <option value="pooja">pooja</option>
+                <option value="rohan">rohan</option>
+              </select>
+            </div>
+            <div>
+              <label for="ttsFormat">Audio Format</label>
+              <select id="ttsFormat">
+                <option value="wav">wav</option>
+                <option value="mp3">mp3</option>
+              </select>
+            </div>
+            <div>
+              <label for="ttsPace">Pace</label>
+              <input id="ttsPace" type="number" min="0.5" max="2" step="0.1" value="1.0">
+            </div>
+          </div>
+
+          <div class="actions">
+            <button class="primary" id="generateTts">Generate Speech</button>
+            <button class="secondary" id="downloadTts" disabled>Download Audio</button>
+          </div>
+
+          <audio id="ttsAudio" controls></audio>
+          <div class="message" id="ttsStatus"></div>
+        </div>
+      </section>
+
+      <section class="panel" aria-labelledby="sttTitle">
+        <div class="panel-head">
+          <div>
+            <h2 id="sttTitle">Speech To Text</h2>
+            <p>Upload audio or record from the microphone, then read the transcript.</p>
+          </div>
+          <span class="tag stt">STT</span>
+        </div>
+        <div class="body">
+          <div>
+            <label for="audioFile">Audio File</label>
+            <input id="audioFile" type="file" accept="audio/*">
+          </div>
+
+          <div class="grid">
+            <div>
+              <label for="sttLanguage">Language</label>
+              <select id="sttLanguage">
+                <option value="">Auto detect</option>
+                <option value="unknown">Unknown</option>
+                <option value="hi-IN">Hindi</option>
+                <option value="en-IN">English India</option>
+                <option value="gu-IN">Gujarati</option>
+                <option value="bn-IN">Bengali</option>
+                <option value="kn-IN">Kannada</option>
+                <option value="ml-IN">Malayalam</option>
+                <option value="mr-IN">Marathi</option>
+                <option value="od-IN">Odia</option>
+                <option value="pa-IN">Punjabi</option>
+                <option value="ta-IN">Tamil</option>
+                <option value="te-IN">Telugu</option>
+              </select>
+            </div>
+            <div>
+              <label for="sttMode">Mode</label>
+              <select id="sttMode">
+                <option value="transcribe">transcribe</option>
+                <option value="translate">translate</option>
+                <option value="verbatim">verbatim</option>
+                <option value="translit">translit</option>
+                <option value="codemix">codemix</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="actions">
+            <button class="primary" id="transcribeFile">Transcribe File</button>
+            <button class="secondary" id="startRecording">Start Recording</button>
+            <button class="danger" id="stopRecording" disabled>Stop And Transcribe</button>
+          </div>
+
+          <div class="meter" aria-hidden="true"><span id="recordMeter"></span></div>
+          <div class="message" id="sttStatus"></div>
+          <div class="result" id="sttResult">Your transcript will appear here.</div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script>
+    const state = {
+      recorder: null,
+      chunks: [],
+      meterTimer: null,
+      lastAudioUrl: null,
+      lastAudioBlob: null,
+      lastAudioFormat: "wav"
+    };
+
+    const $ = (id) => document.getElementById(id);
+    const serverOrigin = window.location.origin;
+
+    $("serverUrl").textContent = serverOrigin;
+
+    function setMessage(id, text, kind = "") {
+      const el = $(id);
+      el.textContent = text;
+      el.className = `message ${kind}`.trim();
+    }
+
+    async function readError(response) {
+      const text = await response.text();
+      try {
+        const data = JSON.parse(text);
+        return data.detail ? JSON.stringify(data.detail, null, 2) : JSON.stringify(data, null, 2);
+      } catch {
+        return text || `${response.status} ${response.statusText}`;
+      }
+    }
+
+    async function checkHealth() {
+      try {
+        const response = await fetch("/health");
+        const data = await response.json();
+        $("healthDot").classList.toggle("ok", Boolean(data.sarvam_key_set));
+        $("healthText").textContent = data.sarvam_key_set ? "Server ready" : "API key missing";
+      } catch {
+        $("healthText").textContent = "Server unavailable";
+      }
+    }
+
+    function microphoneSupportMessage() {
+      if (!window.isSecureContext) {
+        return "Open this page as http://localhost:8000/. Browsers block microphone access on insecure origins like http://0.0.0.0:8000, LAN IPs, and many IDE previews.";
+      }
+
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        return "This browser or embedded preview does not expose microphone access. Open http://localhost:8000/ in Chrome, Edge, or Firefox.";
+      }
+
+      if (!window.MediaRecorder) {
+        return "This browser can access the microphone but does not support MediaRecorder. Use Chrome, Edge, or Firefox.";
+      }
+
+      return "";
+    }
+
+    async function generateTts() {
+      const text = $("ttsText").value.trim();
+      if (!text) {
+        setMessage("ttsStatus", "Enter text first.", "error");
+        return;
+      }
+
+      $("generateTts").disabled = true;
+      $("downloadTts").disabled = true;
+      setMessage("ttsStatus", "Generating speech...");
+
+      try {
+        const outputFormat = $("ttsFormat").value;
+        const response = await fetch("/tts/generate", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            text,
+            target_language_code: $("ttsLanguage").value,
+            speaker: $("ttsSpeaker").value,
+            model: "bulbul:v3",
+            pace: Number($("ttsPace").value || 1),
+            output_format: outputFormat
+          })
+        });
+
+        if (!response.ok) {
+          throw new Error(await readError(response));
+        }
+
+        const audioBlob = await response.blob();
+        if (state.lastAudioUrl) URL.revokeObjectURL(state.lastAudioUrl);
+        state.lastAudioBlob = audioBlob;
+        state.lastAudioFormat = outputFormat;
+        state.lastAudioUrl = URL.createObjectURL(audioBlob);
+        $("ttsAudio").src = state.lastAudioUrl;
+        $("downloadTts").disabled = false;
+        setMessage("ttsStatus", "Audio ready.", "ok");
+      } catch (error) {
+        setMessage("ttsStatus", error.message, "error");
+      } finally {
+        $("generateTts").disabled = false;
+      }
+    }
+
+    function downloadTts() {
+      if (!state.lastAudioBlob) return;
+
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(state.lastAudioBlob);
+      link.download = `sarvam-tts.${state.lastAudioFormat}`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(link.href), 1000);
+    }
+
+    function buildSttForm(file) {
+      const form = new FormData();
+      form.append("file", file, file.name || "recording.webm");
+      const language = $("sttLanguage").value;
+      if (language) form.append("language_code", language);
+      form.append("model", "saaras:v3");
+      form.append("mode", $("sttMode").value);
+      return form;
+    }
+
+    function cleanMimeType(mimeType) {
+      return (mimeType || "audio/webm").split(";")[0].trim().toLowerCase();
+    }
+
+    async function transcribeBlob(file) {
+      setMessage("sttStatus", "Transcribing audio...");
+      $("sttResult").textContent = "";
+
+      try {
+        const response = await fetch("/stt/transcribe", {
+          method: "POST",
+          body: buildSttForm(file)
+        });
+
+        if (!response.ok) {
+          throw new Error(await readError(response));
+        }
+
+        const data = await response.json();
+        $("sttResult").textContent = [
+          data.transcript || "",
+          "",
+          `Language: ${data.language_code || "unknown"}`,
+          `Probability: ${data.language_probability ?? "n/a"}`,
+          `Request: ${data.request_id || "n/a"}`
+        ].join("\n");
+        setMessage("sttStatus", "Transcript ready.", "ok");
+      } catch (error) {
+        $("sttResult").textContent = "";
+        setMessage("sttStatus", error.message, "error");
+      }
+    }
+
+    async function transcribeSelectedFile() {
+      const file = $("audioFile").files[0];
+      if (!file) {
+        setMessage("sttStatus", "Choose an audio file first.", "error");
+        return;
+      }
+
+      await transcribeBlob(file);
+    }
+
+    async function startRecording() {
+      const supportMessage = microphoneSupportMessage();
+      if (supportMessage) {
+        setMessage("sttStatus", supportMessage, "error");
+        return;
+      }
+
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        state.chunks = [];
+        const recorderOptions = MediaRecorder.isTypeSupported("audio/webm")
+          ? { mimeType: "audio/webm" }
+          : undefined;
+        state.recorder = new MediaRecorder(stream, recorderOptions);
+        state.recorder.ondataavailable = (event) => {
+          if (event.data.size > 0) state.chunks.push(event.data);
+        };
+        state.recorder.onstop = async () => {
+          clearInterval(state.meterTimer);
+          $("recordMeter").style.width = "0%";
+          stream.getTracks().forEach((track) => track.stop());
+          const blob = new Blob(state.chunks, { type: cleanMimeType(state.recorder.mimeType) });
+          const file = new File([blob], "recording.webm", { type: blob.type });
+          await transcribeBlob(file);
+        };
+
+        state.recorder.start(250);
+        $("startRecording").disabled = true;
+        $("stopRecording").disabled = false;
+        setMessage("sttStatus", "Recording...");
+
+        let width = 12;
+        state.meterTimer = setInterval(() => {
+          width = width >= 94 ? 12 : width + 8;
+          $("recordMeter").style.width = `${width}%`;
+        }, 180);
+      } catch (error) {
+        setMessage("sttStatus", error.message, "error");
+      }
+    }
+
+    function stopRecording() {
+      if (!state.recorder) return;
+      $("stopRecording").disabled = true;
+      $("startRecording").disabled = false;
+      setMessage("sttStatus", "Preparing recording...");
+      state.recorder.stop();
+    }
+
+    $("generateTts").addEventListener("click", generateTts);
+    $("downloadTts").addEventListener("click", downloadTts);
+    $("transcribeFile").addEventListener("click", transcribeSelectedFile);
+    $("startRecording").addEventListener("click", startRecording);
+    $("stopRecording").addEventListener("click", stopRecording);
+
+    checkHealth();
+    const supportMessage = microphoneSupportMessage();
+    if (supportMessage) setMessage("sttStatus", supportMessage, "error");
+  </script>
+</body>
+</html>

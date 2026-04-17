@@ -31,6 +31,32 @@ from openai import AsyncOpenAI, OpenAIError
 
 load_dotenv()
 
+CA_SYSTEM_PROMPT = """You are a highly experienced Chartered Accountant (CA) based in India, with deep expertise in Indian taxation, GST, FEMA, RBI regulations, and international trade compliance.
+
+Your role is to guide users through practical, real-world financial and regulatory scenarios.
+
+For every query, explain:
+- Applicable laws and regulations in the Indian context
+- Step-by-step compliance requirements
+- Required documents and filings
+- Tax implications, if any
+- Common mistakes to avoid
+- Practical tips used by professionals
+
+When the user provides a scenario, break down the answer clearly and systematically.
+
+Use simple language but maintain professional accuracy. Wherever needed, include examples.
+
+Always mention if rules may change based on updates or specific business structures.
+
+Write in a warm, human, easy-to-read style. Avoid markdown symbols like # and * in the response.
+Do not use dense formatting or a checklist style. Avoid numbered lists and overly bullet-heavy answers.
+Prefer short paragraphs, simple labels such as "GST treatment:", "Documents needed:", and "Next steps:", and clear line breaks instead of tables unless they are truly helpful.
+Keep the tone professional, practical, conversational, and naturally human, as if a knowledgeable CA is speaking directly to the customer.
+Sound empathetic, helpful, and calm. Avoid robotic, overly formal, or generic AI-style phrasing.
+Use plain language, natural transitions, and clear explanations that feel like a real person is guiding the user step by step.
+Write in Indian English, using wording that feels natural to users in India."""
+
 SARVAM_API_KEY = os.getenv("SARVAM_API_KEY")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 APP_DIR = Path(__file__).resolve().parent
@@ -59,7 +85,7 @@ app.add_middleware(
 
 class TTSRequest(BaseModel):
     text: str
-    target_language_code: str = "hi-IN"    # BCP-47 language tag
+    target_language_code: str = "en-IN"    # BCP-47 language tag
     speaker: str = "shubh"                  # bulbul:v3 default voice
     model: str = "bulbul:v3"               # bulbul:v2 or bulbul:v3
     pace: float = 1.0                       # 0.5 – 2.0
@@ -95,7 +121,7 @@ class ChatResponse(BaseModel):
 
 
 class AgentRequest(ChatRequest):
-    target_language_code: str = "hi-IN"
+    target_language_code: str = "en-IN"
     speaker: str = "shubh"
     tts_model: str = "bulbul:v3"
     pace: float = 1.0
@@ -207,7 +233,7 @@ def _chat_messages(messages: list[ChatMessage]) -> list[dict[str, str]]:
 
 def _chat_payload(req: ChatRequest) -> dict[str, Any]:
     payload: dict[str, Any] = {
-        "messages": _chat_messages(req.messages),
+        "messages": [{"role": "system", "content": CA_SYSTEM_PROMPT}] + _chat_messages(req.messages),
         "model": req.model,
     }
     # Include these fields if they are not None
@@ -217,10 +243,6 @@ def _chat_payload(req: ChatRequest) -> dict[str, Any]:
         value = getattr(req, field)
         if value is not None:
             payload[field] = value
-    
-    # Explicitly ensure reasoning_effort is not set
-    if "reasoning_effort" in payload:
-        del payload["reasoning_effort"]
     
     return payload
 
@@ -313,7 +335,7 @@ async def health():
 @app.post("/stt/transcribe", response_model=STTResponse)
 async def transcribe_audio(
     file: UploadFile = File(...),
-    language_code: Optional[str] = Form(None),   # e.g. "hi-IN"; omit or use "unknown" for auto-detect
+    language_code: Optional[str] = Form(None),   # e.g. "en-IN"; omit or use "unknown" for auto-detect
     model: str = Form("saaras:v3"),              # saaras:v3 (recommended) | saarika:v2.5
     mode: str = Form("transcribe"),              # transcribe | translate | verbatim | translit | codemix
     input_audio_codec: Optional[str] = Form(None),
@@ -544,7 +566,7 @@ async def tts_stream(websocket: WebSocket):
     Real-time streaming TTS via WebSocket.
 
     Protocol (client → server):
-      1. Send JSON config:  {"speaker": "shubh", "target_language_code": "hi-IN", "model": "bulbul:v3"}
+    1. Send JSON config:  {"speaker": "shubh", "target_language_code": "en-IN", "model": "bulbul:v3"}
       2. Send JSON text chunks: {"text": "नमस्ते, आप कैसे हैं?"}
       3. Send JSON flush:   {"type": "flush"}
       4. Send JSON end:     {"type": "end"}
@@ -577,7 +599,7 @@ async def tts_stream(websocket: WebSocket):
             send_completion_event="true",
         ) as sarvam_ws:
             await sarvam_ws.configure(
-                target_language_code=config.get("target_language_code", "hi-IN"),
+                target_language_code=config.get("target_language_code", "en-IN"),
                 speaker=config.get("speaker", "shubh"),
                 pace=float(config.get("pace", 1.0)),
                 speech_sample_rate=int(config.get("speech_sample_rate", 24000)),

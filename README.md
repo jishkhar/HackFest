@@ -97,6 +97,18 @@ Visit the interactive API docs at:
 - **Swagger UI**: [http://localhost:8000/docs](http://localhost:8000/docs)
 - **ReDoc**: [http://localhost:8000/redoc](http://localhost:8000/redoc)
 
+### Form Assistant
+
+The home page now includes a profile-backed form assistant that reads dummy personal data from `data.json` and autofills matching inputs, selects, textareas, radio buttons, and checkboxes on the page.
+
+It also includes an ITR-1 return form and a voice shortcut: say “fill ITR-1 form” and the agent will populate the return from `data.json`.
+
+Additionally, 10 related tax forms are included and can be filled via voice commands as well:
+ITR-2, ITR-3, ITR-4, Form 80C, Form 80D, Form 80E, Form 80G, HRA Claim, Form 16, and Form 26AS.
+You can also say “fill all tax forms” to populate all related forms at once.
+
+To customise it, edit `data.json` with your own personal details and reload the page.
+
 ---
 
 ## 5. API Endpoints

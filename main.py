@@ -320,6 +320,14 @@ async def ui():
     return (APP_DIR / "ui.html").read_text(encoding="utf-8")
 
 
+@app.get("/data.json")
+async def personal_data():
+    data_path = APP_DIR / "data.json"
+    if not data_path.exists():
+        raise HTTPException(status_code=404, detail="data.json not found")
+    return json.loads(data_path.read_text(encoding="utf-8"))
+
+
 @app.get("/health")
 async def health():
     return {

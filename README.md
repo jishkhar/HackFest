@@ -2,6 +2,11 @@
 
 End-to-end guide to set up a **Speech-to-Text (STT)**, **Text-to-Speech (TTS)**, and **Text Translation** agent using the official Sarvam AI Python SDK, powered by **FastAPI**, ready to integrate with your **Next.js** frontend.
 
+Project layout:
+
+- `backend/` — FastAPI app and API routes
+- `frontend/` — browser UI and profile data
+
 ---
 
 ## Architecture Overview
@@ -89,7 +94,7 @@ SARVAM_API_KEY=your_actual_key_here
 ## 4. Run the Server
 
 ```bash
-uvicorn main:app --reload --host 0.0.0.0 --port 8000
+uvicorn backend.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
 Visit the interactive API docs at:
@@ -99,15 +104,15 @@ Visit the interactive API docs at:
 
 ### Form Assistant
 
-The home page now includes a profile-backed form assistant that reads dummy personal data from `data.json` and autofills matching inputs, selects, textareas, radio buttons, and checkboxes on the page.
+The home page now includes a profile-backed form assistant that reads dummy personal data from `frontend/data.json` and autofills matching inputs, selects, textareas, radio buttons, and checkboxes on the page.
 
-It also includes an ITR-1 return form and a voice shortcut: say “fill ITR-1 form” and the agent will populate the return from `data.json`.
+It also includes an ITR-1 return form and a voice shortcut: say “fill ITR-1 form” and the agent will populate the return from `frontend/data.json`.
 
 Additionally, 10 related tax forms are included and can be filled via voice commands as well:
 ITR-2, ITR-3, ITR-4, Form 80C, Form 80D, Form 80E, Form 80G, HRA Claim, Form 16, and Form 26AS.
 You can also say “fill all tax forms” to populate all related forms at once.
 
-To customise it, edit `data.json` with your own personal details and reload the page.
+To customise it, edit `frontend/data.json` with your own personal details and reload the page.
 
 ---
 
@@ -477,7 +482,7 @@ app.add_middleware(
 - **Environment:** Set `SARVAM_API_KEY` as a secret in your hosting provider (Railway, Render, AWS, GCP, etc.)
 - **Process manager:** Use `gunicorn` with `uvicorn` workers for production:
   ```bash
-  gunicorn main:app -w 4 -k uvicorn.workers.UvicornWorker --bind 0.0.0.0:8000
+  gunicorn backend.main:app -w 4 -k uvicorn.workers.UvicornWorker --bind 0.0.0.0:8000
   ```
 - **HTTPS/WSS:** Use a reverse proxy (nginx, Caddy) with TLS so browser WebSocket connections use `wss://`
 - **Rate limits:** Sarvam enforces per-key rate limits. Add retry logic with exponential backoff for production.
